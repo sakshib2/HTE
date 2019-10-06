@@ -1,0 +1,1231 @@
+# ______________________________________Outcome 1: e_monthly_profits_all__________________________________________________________
+rm(list = ls())
+# Set seed for reproducibility
+set.seed(1234)
+#install.packages(c("aod", "car", "evtree", "fBasics", "kableExtra", "psych"))
+#install.packages("ggplot2")
+#install.packages("corrplot")
+#install.packages("grf")
+
+library(ggplot2)
+library(corrplot)
+library(dplyr)       # Data manipulation (0.8.0.1)
+library(fBasics)     # Summary statistics (3042.89)
+library(corrplot)    # Correlations (0.84)
+library(psych)       # Correlation p-values (1.8.12)
+library(grf)         # Generalized random forests (0.10.2)
+library(rpart)       # Classification and regression trees, or CART (4.1-13)
+library(rpart.plot)  # Plotting tres (3.0.6)
+library(treeClust)   # Predicting leaf position for causal trees (1.1-7)
+library(car)         # linear hypothesis testing for causal tree (3.0-2)
+library(devtools)    # Install packages from github (2.0.1)
+library(readr)       # Reading csv files (1.3.1)
+library(tidyr)       # Database operations (0.8.3)
+library(tibble)      # Modern alternative to data frames (2.1.1)
+library(knitr)       # RMarkdown (1.21)
+library(kableExtra)  # Prettier RMarkdown (1.0.1)
+library(ggplot2)     # general plotting tool (3.1.0)
+library(haven)       # read stata files (2.0.0)
+library(aod)         # hypothesis testing (1.3.1)
+library(evtree)      # evolutionary learning of globally optimal trees (1.0-7)
+library(foreign)
+
+
+
+#install_github('susanathey/causalTree') 
+library(causalTree)
+
+
+#install_github("soerenkuenzel/causalToolbox")
+#install.packages("BART")
+#library(causalToolbox)
+
+library(haven) 
+df <- read_dta("~/ML/ABA All Merged 20190920.dta")
+
+
+outcome_variable_name <- "e_monthly_profits_all"
+treatment_variable_name <- "treatment"
+
+#Using all Baseline var as covariates. 
+
+
+covariate_names = c('b_birth_year', 
+                     'b_gender', 
+                     'b_education', 
+                     'b_income_sources', 
+                     'b_other_businesses', 
+                     'b_personal_expenses', 
+                     'b_monthly_income', 
+                     'b_sector_services', 
+                     'b_sector_retail', 
+                     'b_sector_manufacturing', 
+                     'b_sector_agriculture', 
+                     'b_sector_wholesale', 
+                     'b_number_partners', 
+                     'b_registration', 
+                     'b_premises', 
+                     'b_premisesown_own', 
+                     'b_premisesown_rentold', 
+                     'b_premisesown_rentnew', 
+                     'b_start_year', 
+                     'b_hours', 
+                     'b_days', 
+                     'b_branches', 
+                     'b_closed_branches', 
+                     'b_new_branches', 
+                     'b_monthly_expenses', 
+                     'b_monthly_revenue', 
+                     'b_monthly_profits', 
+                     'b_amount', 
+                     'b_number_suppliers', 
+                     'b_importing_inputs', 
+                     'b_exporting', 
+                     'b_sales_better', 
+                     'b_sales_average', 
+                     'b_sales_worse', 
+                     'b_consignment', 
+                     'b_credit', 
+                     'b_staff_yesno', 
+                     'b_num_employ_full', 
+                     'b_num_employ_part', 
+                     'b_num_employ_temp', 
+                     'b_num_employ_intern', 
+                     'b_num_employ_unpaid', 
+                     'b_nemployees_main', 
+                     'b_full_wage_main', 
+                     'b_temp_wage_main', 
+                     'b_intern_wage_main', 
+                     'b_unpaid_wage_main', 
+                     'b_wagebill_main', 
+                     'digitspan', 
+                     'b_separate_accounts', 
+                     'b_fin_loan_reject_times', 
+                     'b_fin_calcexp', 
+                     'b_loans', 
+                     'b_totloans_bank', 
+                     'b_totloans_mfi', 
+                     'b_totloans_famfriend', 
+                     'b_totloans_rosca', 
+                     'b_totloans', 
+                     'raven_score', 
+                     'fl_score', 
+                     'b_hours', 
+                     'b_days', 
+                     'b_workhours_week', 
+                     'b_hasbranch', 
+                     'b_branches', 
+                     'b_closed_branches', 
+                     'b_new_branches', 
+                     'b_monthly_expenses', 
+                     'b_monthly_revenue', 
+                     'b_monthly_profits', 
+                     'b_selfpay_hourlywage', 
+                     'b_selfpay_fixedsalary', 
+                     'b_selfpay_commission', 
+                     'b_selfpay_profitshare', 
+                     'b_selfpay_expenses', 
+                     'b_amount', 
+                     'b_number_suppliers', 
+                     'b_importing_inputs', 
+                     'b_exporting', 
+                     'b_sales_better', 
+                     'b_sales_average', 
+                     'b_sales_worse', 
+                     'b_seasonal_sales', 
+                     'b_lastmonth_sales', 
+                     'b_beflastmonth_sales', 
+                     'b_highest_profits', 
+                     'b_lowest_profits', 
+                     'b_risk_attitude', 
+                     'b_hh_consumption')
+
+
+
+
+
+# Combine all names
+all_variables_names <- c(outcome_variable_name, treatment_variable_name, covariate_names)
+df <- df[, which(names(df) %in% all_variables_names)]
+#1935 obs of 74 var
+
+
+# Drop rows containing missing values
+df <- na.omit(df)
+
+#1711 obs now
+
+#Rename variables
+names(df)[names(df) == outcome_variable_name] <- "Y"
+names(df)[names(df) == treatment_variable_name] <- "W"
+
+# Converting all columns to numerical
+df <- data.frame(lapply(df, function(x) as.numeric(as.character(x))))
+
+# Use train_fraction % of the dataset to train our models
+train_fraction <- 0.80  
+n <- dim(df)[1]
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+df_train <- df[train_idx,]
+df_test <- df[-train_idx,]
+
+
+
+##___________________________________________ HTE 2: Causal Forests and the R-Learner_______________
+
+#### Step 1: Fit the forest
+cf <- causal_forest(
+  X = as.matrix(df_train[,covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  num.trees=200) # This is just for speed. In a real application, remember increase this number!
+
+
+#### Step 2(a): Predict point estimates and standard errors (training set, out-of-bag)
+oob_pred <- predict(cf, estimate.variance=TRUE)
+
+kable_styling(kable(head(oob_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+oob_tauhat_cf <- oob_pred$predictions
+oob_tauhat_cf_se <- sqrt(oob_pred$variance.estimates)
+test_pred <- predict(cf, newdata=as.matrix(df_test[covariate_names]), estimate.variance=TRUE)
+tauhat_cf_test <- test_pred$predictions
+tauhat_cf_test_se <- sqrt(test_pred$variance.estimates)
+kable_styling(kable(head(test_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+
+cf_known_prop <- grf::causal_forest(
+  X = as.matrix(df_train[covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  W.hat = rep(mean(df_train$W), times=nrow(df_train)))  # Passing the known (approximate) propensity score
+
+### Assessing heterogeneity
+
+hist(oob_tauhat_cf, main="Causal forests: out-of-bag CATE")
+
+var_imp <- c(variable_importance(cf))
+names(var_imp) <- covariate_names
+sorted_var_imp <- sort(var_imp, decreasing=TRUE)
+
+
+as.data.frame(sorted_var_imp, row.names = names(sorted_var_imp)) %>%
+  kable("html", digits = 4, row.names = T) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+
+
+#### Heterogeneity across subgroups
+
+# Manually creating subgroups
+num_tiles <- 4  # ntiles = CATE is above / below the median
+df_train$cate <- oob_tauhat_cf
+df_train$ntile <- factor(ntile(oob_tauhat_cf, n=num_tiles))
+
+##### Average treatment effects within subgroups
+ols_sample_ate <- lm("Y ~ ntile + ntile:W", data=df_train)
+estimated_sample_ate <- coef(summary(ols_sample_ate))[(num_tiles+1):(2*num_tiles), c("Estimate", "Std. Error")]
+hypothesis_sample_ate <- paste0("ntile1:W = ", paste0("ntile", seq(2, num_tiles), ":W"))
+ftest_pvalue_sample_ate <- linearHypothesis(ols_sample_ate, hypothesis_sample_ate)[2,"Pr(>F)"]
+
+estimated_aipw_ate <- lapply(
+  seq(num_tiles), function(w) {
+    ate <- average_treatment_effect(cf, subset = df_train$ntile == w)
+  })
+estimated_aipw_ate <- data.frame(do.call(rbind, estimated_aipw_ate))
+
+# Testing for equality using Wald test
+waldtest_pvalue_aipw_ate <- wald.test(Sigma = diag(estimated_aipw_ate$std.err^2),
+                                      b = estimated_aipw_ate$estimate,
+                                      Terms = 1:num_tiles)$result$chi2[3]
+
+
+# Round the estimates and standard errors before displaying them
+estimated_sample_ate_rounded <- round(signif(estimated_sample_ate, digits = 5), 4)
+estimated_aipw_ate_rounded <- round(signif(estimated_aipw_ate, digits = 5), 4)
+
+# Format Table: Parenthesis, row/column names
+sample_ate_w_se <- c(rbind(estimated_sample_ate[,"Estimate"], paste0("(", estimated_sample_ate_rounded[,"Std. Error"], ")")))
+aipw_ate_w_se <- c(rbind(estimated_aipw_ate[,"estimate"], paste0("(", estimated_aipw_ate_rounded[,"std.err"], ")")))
+table <- cbind("Sample ATE" = sample_ate_w_se, "AIPW ATE" = aipw_ate_w_se)
+table <- rbind(table, round(signif(c(ftest_pvalue_sample_ate, waldtest_pvalue_aipw_ate), digits = 5), 4)) # add p-value to table
+left_column <- rep('', nrow(table))
+left_column[seq(1, nrow(table), 2)] <-
+  cell_spec(c(paste0("ntile", seq(num_tiles)), "P-Value"),
+            format = "html", escape = FALSE, color = "black", bold = TRUE)
+table <- cbind(" " = left_column, table)
+
+# Output table
+table %>%
+  kable("html", escape = FALSE, row.names = FALSE) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE) %>%
+  footnote(general = "Average treatment effects per subgroup defined by out-of-bag CATE.<br>
+           P-value is testing <i>H<sub>0</sub>: ATE is constant across ntiles</i>.<br>
+           Sample ATE uses an F-test and AIPW uses a Wald test;<br>
+           see the code above for more details.",
+           escape=FALSE)
+
+# Transform to data tables with relevant columns
+estimated_sample_ate <- as.data.frame(estimated_sample_ate)
+estimated_sample_ate$Method <- "Sample ATE"
+estimated_sample_ate$Ntile <- as.numeric(sub(".*([0-9]+).*", "\\1", rownames(estimated_sample_ate)))
+
+estimated_aipw_ate <- as.data.frame(estimated_aipw_ate)
+estimated_aipw_ate$Method <- "AIPW ATE"
+estimated_aipw_ate$Ntile <- as.numeric(rownames(estimated_aipw_ate))
+
+# unify column names and combine
+colnames(estimated_sample_ate) <- c("Estimate", "SE", "Method", "Ntile")
+colnames(estimated_aipw_ate) <- c("Estimate", "SE", "Method", "Ntile")
+combined_ate_estimates <- rbind(estimated_sample_ate, estimated_aipw_ate)
+
+# plot
+ggplot(combined_ate_estimates) +
+  geom_pointrange(aes(x = Ntile, y = Estimate, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                  size = 0.5,
+                  position = position_dodge(width = .5)) +
+  geom_errorbar(aes(x = Ntile, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                width = 0.4,
+                size = 0.75,
+                position = position_dodge(width = .5)) +
+  theme_linedraw() +
+  labs(x = "N-tile", y = "ATE Estimate", title = "ATE within N-tiles e_monthly_profits_all.1 (as defined by predicted CATE)")
+
+
+
+
+
+# ______________________________________Outcome 2: e_monthly_revenue_all__________________________________________________________
+
+rm(list = ls())
+# Set seed for reproducibility
+set.seed(1234)
+df <- read_dta("~/ML/ABA All Merged 20190920.dta")
+outcome_variable_name <- "e_monthly_revenue_all"
+treatment_variable_name <- "treatment"
+covariate_names = c('b_birth_year', 
+                    'b_gender', 
+                    'b_education', 
+                    'b_income_sources', 
+                    'b_other_businesses', 
+                    'b_personal_expenses', 
+                    'b_monthly_income', 
+                    'b_sector_services', 
+                    'b_sector_retail', 
+                    'b_sector_manufacturing', 
+                    'b_sector_agriculture', 
+                    'b_sector_wholesale', 
+                    'b_number_partners', 
+                    'b_registration', 
+                    'b_premises', 
+                    'b_premisesown_own', 
+                    'b_premisesown_rentold', 
+                    'b_premisesown_rentnew', 
+                    'b_start_year', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_consignment', 
+                    'b_credit', 
+                    'b_staff_yesno', 
+                    'b_num_employ_full', 
+                    'b_num_employ_part', 
+                    'b_num_employ_temp', 
+                    'b_num_employ_intern', 
+                    'b_num_employ_unpaid', 
+                    'b_nemployees_main', 
+                    'b_full_wage_main', 
+                    'b_temp_wage_main', 
+                    'b_intern_wage_main', 
+                    'b_unpaid_wage_main', 
+                    'b_wagebill_main', 
+                    'digitspan', 
+                    'b_separate_accounts', 
+                    'b_fin_loan_reject_times', 
+                    'b_fin_calcexp', 
+                    'b_loans', 
+                    'b_totloans_bank', 
+                    'b_totloans_mfi', 
+                    'b_totloans_famfriend', 
+                    'b_totloans_rosca', 
+                    'b_totloans', 
+                    'raven_score', 
+                    'fl_score', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_workhours_week', 
+                    'b_hasbranch', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_selfpay_hourlywage', 
+                    'b_selfpay_fixedsalary', 
+                    'b_selfpay_commission', 
+                    'b_selfpay_profitshare', 
+                    'b_selfpay_expenses', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_seasonal_sales', 
+                    'b_lastmonth_sales', 
+                    'b_beflastmonth_sales', 
+                    'b_highest_profits', 
+                    'b_lowest_profits', 
+                    'b_risk_attitude', 
+                    'b_hh_consumption')
+
+all_variables_names <- c(outcome_variable_name, treatment_variable_name, covariate_names)
+df <- df[, which(names(df) %in% all_variables_names)]
+df <- na.omit(df)
+
+names(df)[names(df) == outcome_variable_name] <- "Y"
+names(df)[names(df) == treatment_variable_name] <- "W"
+
+df <- data.frame(lapply(df, function(x) as.numeric(as.character(x))))
+
+train_fraction <- 0.80  
+n <- dim(df)[1]
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+df_train <- df[train_idx,]
+df_test <- df[-train_idx,]
+
+#### Step 1: Fit the forest
+cf <- causal_forest(
+  X = as.matrix(df_train[,covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  num.trees=200) # This is just for speed. In a real application, remember increase this number!
+
+#### Step 2(a): Predict point estimates and standard errors (training set, out-of-bag)
+oob_pred <- predict(cf, estimate.variance=TRUE)
+
+kable_styling(kable(head(oob_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+oob_tauhat_cf <- oob_pred$predictions
+oob_tauhat_cf_se <- sqrt(oob_pred$variance.estimates)
+test_pred <- predict(cf, newdata=as.matrix(df_test[covariate_names]), estimate.variance=TRUE)
+tauhat_cf_test <- test_pred$predictions
+tauhat_cf_test_se <- sqrt(test_pred$variance.estimates)
+kable_styling(kable(head(test_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+
+cf_known_prop <- grf::causal_forest(
+  X = as.matrix(df_train[covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  W.hat = rep(mean(df_train$W), times=nrow(df_train)))  # Passing the known (approximate) propensity score
+
+### Assessing heterogeneity
+
+hist(oob_tauhat_cf, main="Causal forests: out-of-bag CATE")
+
+var_imp <- c(variable_importance(cf))
+names(var_imp) <- covariate_names
+sorted_var_imp <- sort(var_imp, decreasing=TRUE)
+
+
+as.data.frame(sorted_var_imp, row.names = names(sorted_var_imp)) %>%
+  kable("html", digits = 4, row.names = T) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+
+
+#### Heterogeneity across subgroups
+
+# Manually creating subgroups
+num_tiles <- 4  # ntiles = CATE is above / below the median
+df_train$cate <- oob_tauhat_cf
+df_train$ntile <- factor(ntile(oob_tauhat_cf, n=num_tiles))
+
+##### Average treatment effects within subgroups
+ols_sample_ate <- lm("Y ~ ntile + ntile:W", data=df_train)
+estimated_sample_ate <- coef(summary(ols_sample_ate))[(num_tiles+1):(2*num_tiles), c("Estimate", "Std. Error")]
+hypothesis_sample_ate <- paste0("ntile1:W = ", paste0("ntile", seq(2, num_tiles), ":W"))
+ftest_pvalue_sample_ate <- linearHypothesis(ols_sample_ate, hypothesis_sample_ate)[2,"Pr(>F)"]
+
+estimated_aipw_ate <- lapply(
+  seq(num_tiles), function(w) {
+    ate <- average_treatment_effect(cf, subset = df_train$ntile == w)
+  })
+estimated_aipw_ate <- data.frame(do.call(rbind, estimated_aipw_ate))
+
+# Testing for equality using Wald test
+waldtest_pvalue_aipw_ate <- wald.test(Sigma = diag(estimated_aipw_ate$std.err^2),
+                                      b = estimated_aipw_ate$estimate,
+                                      Terms = 1:num_tiles)$result$chi2[3]
+
+
+# Round the estimates and standard errors before displaying them
+estimated_sample_ate_rounded <- round(signif(estimated_sample_ate, digits = 5), 4)
+estimated_aipw_ate_rounded <- round(signif(estimated_aipw_ate, digits = 5), 4)
+
+# Format Table: Parenthesis, row/column names
+sample_ate_w_se <- c(rbind(estimated_sample_ate[,"Estimate"], paste0("(", estimated_sample_ate_rounded[,"Std. Error"], ")")))
+aipw_ate_w_se <- c(rbind(estimated_aipw_ate[,"estimate"], paste0("(", estimated_aipw_ate_rounded[,"std.err"], ")")))
+table <- cbind("Sample ATE" = sample_ate_w_se, "AIPW ATE" = aipw_ate_w_se)
+table <- rbind(table, round(signif(c(ftest_pvalue_sample_ate, waldtest_pvalue_aipw_ate), digits = 5), 4)) # add p-value to table
+left_column <- rep('', nrow(table))
+left_column[seq(1, nrow(table), 2)] <-
+  cell_spec(c(paste0("ntile", seq(num_tiles)), "P-Value"),
+            format = "html", escape = FALSE, color = "black", bold = TRUE)
+table <- cbind(" " = left_column, table)
+
+# Output table
+table %>%
+  kable("html", escape = FALSE, row.names = FALSE) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE) %>%
+  footnote(general = "Average treatment effects per subgroup defined by out-of-bag CATE.<br>
+           P-value is testing <i>H<sub>0</sub>: ATE is constant across ntiles</i>.<br>
+           Sample ATE uses an F-test and AIPW uses a Wald test;<br>
+           see the code above for more details.",
+           escape=FALSE)
+
+# Transform to data tables with relevant columns
+estimated_sample_ate <- as.data.frame(estimated_sample_ate)
+estimated_sample_ate$Method <- "Sample ATE"
+estimated_sample_ate$Ntile <- as.numeric(sub(".*([0-9]+).*", "\\1", rownames(estimated_sample_ate)))
+
+estimated_aipw_ate <- as.data.frame(estimated_aipw_ate)
+estimated_aipw_ate$Method <- "AIPW ATE"
+estimated_aipw_ate$Ntile <- as.numeric(rownames(estimated_aipw_ate))
+
+# unify column names and combine
+colnames(estimated_sample_ate) <- c("Estimate", "SE", "Method", "Ntile")
+colnames(estimated_aipw_ate) <- c("Estimate", "SE", "Method", "Ntile")
+combined_ate_estimates <- rbind(estimated_sample_ate, estimated_aipw_ate)
+
+# plot
+ggplot(combined_ate_estimates) +
+  geom_pointrange(aes(x = Ntile, y = Estimate, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                  size = 0.5,
+                  position = position_dodge(width = .5)) +
+  geom_errorbar(aes(x = Ntile, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                width = 0.4,
+                size = 0.75,
+                position = position_dodge(width = .5)) +
+  theme_linedraw() +
+  labs(x = "N-tile", y = "ATE Estimate", title = "ATE within N-tiles e_monthly_revenue_all.1 (as defined by predicted CATE)")
+
+
+
+
+
+# ______________________________________Outcome 3: e_monthly_expenses_all__________________________________________________________
+
+rm(list = ls())
+# Set seed for reproducibility
+set.seed(1234)
+df <- read_dta("~/ML/ABA All Merged 20190920.dta")
+outcome_variable_name <- "e_monthly_expenses_all"
+treatment_variable_name <- "treatment"
+covariate_names = c('b_birth_year', 
+                    'b_gender', 
+                    'b_education', 
+                    'b_income_sources', 
+                    'b_other_businesses', 
+                    'b_personal_expenses', 
+                    'b_monthly_income', 
+                    'b_sector_services', 
+                    'b_sector_retail', 
+                    'b_sector_manufacturing', 
+                    'b_sector_agriculture', 
+                    'b_sector_wholesale', 
+                    'b_number_partners', 
+                    'b_registration', 
+                    'b_premises', 
+                    'b_premisesown_own', 
+                    'b_premisesown_rentold', 
+                    'b_premisesown_rentnew', 
+                    'b_start_year', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_consignment', 
+                    'b_credit', 
+                    'b_staff_yesno', 
+                    'b_num_employ_full', 
+                    'b_num_employ_part', 
+                    'b_num_employ_temp', 
+                    'b_num_employ_intern', 
+                    'b_num_employ_unpaid', 
+                    'b_nemployees_main', 
+                    'b_full_wage_main', 
+                    'b_temp_wage_main', 
+                    'b_intern_wage_main', 
+                    'b_unpaid_wage_main', 
+                    'b_wagebill_main', 
+                    'digitspan', 
+                    'b_separate_accounts', 
+                    'b_fin_loan_reject_times', 
+                    'b_fin_calcexp', 
+                    'b_loans', 
+                    'b_totloans_bank', 
+                    'b_totloans_mfi', 
+                    'b_totloans_famfriend', 
+                    'b_totloans_rosca', 
+                    'b_totloans', 
+                    'raven_score', 
+                    'fl_score', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_workhours_week', 
+                    'b_hasbranch', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_selfpay_hourlywage', 
+                    'b_selfpay_fixedsalary', 
+                    'b_selfpay_commission', 
+                    'b_selfpay_profitshare', 
+                    'b_selfpay_expenses', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_seasonal_sales', 
+                    'b_lastmonth_sales', 
+                    'b_beflastmonth_sales', 
+                    'b_highest_profits', 
+                    'b_lowest_profits', 
+                    'b_risk_attitude', 
+                    'b_hh_consumption')
+
+all_variables_names <- c(outcome_variable_name, treatment_variable_name, covariate_names)
+df <- df[, which(names(df) %in% all_variables_names)]
+df <- na.omit(df)
+
+names(df)[names(df) == outcome_variable_name] <- "Y"
+names(df)[names(df) == treatment_variable_name] <- "W"
+
+df <- data.frame(lapply(df, function(x) as.numeric(as.character(x))))
+
+train_fraction <- 0.80  
+n <- dim(df)[1]
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+df_train <- df[train_idx,]
+df_test <- df[-train_idx,]
+
+#### Step 1: Fit the forest
+cf <- causal_forest(
+  X = as.matrix(df_train[,covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  num.trees=200) # This is just for speed. In a real application, remember increase this number!
+
+#### Step 2(a): Predict point estimates and standard errors (training set, out-of-bag)
+oob_pred <- predict(cf, estimate.variance=TRUE)
+
+kable_styling(kable(head(oob_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+oob_tauhat_cf <- oob_pred$predictions
+oob_tauhat_cf_se <- sqrt(oob_pred$variance.estimates)
+test_pred <- predict(cf, newdata=as.matrix(df_test[covariate_names]), estimate.variance=TRUE)
+tauhat_cf_test <- test_pred$predictions
+tauhat_cf_test_se <- sqrt(test_pred$variance.estimates)
+kable_styling(kable(head(test_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+
+cf_known_prop <- grf::causal_forest(
+  X = as.matrix(df_train[covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  W.hat = rep(mean(df_train$W), times=nrow(df_train)))  # Passing the known (approximate) propensity score
+
+### Assessing heterogeneity
+
+hist(oob_tauhat_cf, main="Causal forests: out-of-bag CATE")
+
+var_imp <- c(variable_importance(cf))
+names(var_imp) <- covariate_names
+sorted_var_imp <- sort(var_imp, decreasing=TRUE)
+
+
+as.data.frame(sorted_var_imp, row.names = names(sorted_var_imp)) %>%
+  kable("html", digits = 4, row.names = T) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+
+
+#### Heterogeneity across subgroups
+
+# Manually creating subgroups
+num_tiles <- 4  # ntiles = CATE is above / below the median
+df_train$cate <- oob_tauhat_cf
+df_train$ntile <- factor(ntile(oob_tauhat_cf, n=num_tiles))
+
+##### Average treatment effects within subgroups
+ols_sample_ate <- lm("Y ~ ntile + ntile:W", data=df_train)
+estimated_sample_ate <- coef(summary(ols_sample_ate))[(num_tiles+1):(2*num_tiles), c("Estimate", "Std. Error")]
+hypothesis_sample_ate <- paste0("ntile1:W = ", paste0("ntile", seq(2, num_tiles), ":W"))
+ftest_pvalue_sample_ate <- linearHypothesis(ols_sample_ate, hypothesis_sample_ate)[2,"Pr(>F)"]
+
+estimated_aipw_ate <- lapply(
+  seq(num_tiles), function(w) {
+    ate <- average_treatment_effect(cf, subset = df_train$ntile == w)
+  })
+estimated_aipw_ate <- data.frame(do.call(rbind, estimated_aipw_ate))
+
+# Testing for equality using Wald test
+waldtest_pvalue_aipw_ate <- wald.test(Sigma = diag(estimated_aipw_ate$std.err^2),
+                                      b = estimated_aipw_ate$estimate,
+                                      Terms = 1:num_tiles)$result$chi2[3]
+
+
+# Round the estimates and standard errors before displaying them
+estimated_sample_ate_rounded <- round(signif(estimated_sample_ate, digits = 5), 4)
+estimated_aipw_ate_rounded <- round(signif(estimated_aipw_ate, digits = 5), 4)
+
+# Format Table: Parenthesis, row/column names
+sample_ate_w_se <- c(rbind(estimated_sample_ate[,"Estimate"], paste0("(", estimated_sample_ate_rounded[,"Std. Error"], ")")))
+aipw_ate_w_se <- c(rbind(estimated_aipw_ate[,"estimate"], paste0("(", estimated_aipw_ate_rounded[,"std.err"], ")")))
+table <- cbind("Sample ATE" = sample_ate_w_se, "AIPW ATE" = aipw_ate_w_se)
+table <- rbind(table, round(signif(c(ftest_pvalue_sample_ate, waldtest_pvalue_aipw_ate), digits = 5), 4)) # add p-value to table
+left_column <- rep('', nrow(table))
+left_column[seq(1, nrow(table), 2)] <-
+  cell_spec(c(paste0("ntile", seq(num_tiles)), "P-Value"),
+            format = "html", escape = FALSE, color = "black", bold = TRUE)
+table <- cbind(" " = left_column, table)
+
+# Output table
+table %>%
+  kable("html", escape = FALSE, row.names = FALSE) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE) %>%
+  footnote(general = "Average treatment effects per subgroup defined by out-of-bag CATE.<br>
+           P-value is testing <i>H<sub>0</sub>: ATE is constant across ntiles</i>.<br>
+           Sample ATE uses an F-test and AIPW uses a Wald test;<br>
+           see the code above for more details.",
+           escape=FALSE)
+
+# Transform to data tables with relevant columns
+estimated_sample_ate <- as.data.frame(estimated_sample_ate)
+estimated_sample_ate$Method <- "Sample ATE"
+estimated_sample_ate$Ntile <- as.numeric(sub(".*([0-9]+).*", "\\1", rownames(estimated_sample_ate)))
+
+estimated_aipw_ate <- as.data.frame(estimated_aipw_ate)
+estimated_aipw_ate$Method <- "AIPW ATE"
+estimated_aipw_ate$Ntile <- as.numeric(rownames(estimated_aipw_ate))
+
+# unify column names and combine
+colnames(estimated_sample_ate) <- c("Estimate", "SE", "Method", "Ntile")
+colnames(estimated_aipw_ate) <- c("Estimate", "SE", "Method", "Ntile")
+combined_ate_estimates <- rbind(estimated_sample_ate, estimated_aipw_ate)
+
+# plot
+ggplot(combined_ate_estimates) +
+  geom_pointrange(aes(x = Ntile, y = Estimate, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                  size = 0.5,
+                  position = position_dodge(width = .5)) +
+  geom_errorbar(aes(x = Ntile, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                width = 0.4,
+                size = 0.75,
+                position = position_dodge(width = .5)) +
+  theme_linedraw() +
+  labs(x = "N-tile", y = "ATE Estimate", title = "ATE within N-tiles e_monthly_expenses_all.1 (as defined by predicted CATE)")
+
+
+
+
+# ______________________________________Outcome 4: e_wagebill_all__________________________________________________________
+
+rm(list = ls())
+# Set seed for reproducibility
+set.seed(1234)
+df <- read_dta("~/ML/ABA All Merged 20190920.dta")
+outcome_variable_name <- "e_wagebill_all"
+treatment_variable_name <- "treatment"
+covariate_names = c('b_birth_year', 
+                    'b_gender', 
+                    'b_education', 
+                    'b_income_sources', 
+                    'b_other_businesses', 
+                    'b_personal_expenses', 
+                    'b_monthly_income', 
+                    'b_sector_services', 
+                    'b_sector_retail', 
+                    'b_sector_manufacturing', 
+                    'b_sector_agriculture', 
+                    'b_sector_wholesale', 
+                    'b_number_partners', 
+                    'b_registration', 
+                    'b_premises', 
+                    'b_premisesown_own', 
+                    'b_premisesown_rentold', 
+                    'b_premisesown_rentnew', 
+                    'b_start_year', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_consignment', 
+                    'b_credit', 
+                    'b_staff_yesno', 
+                    'b_num_employ_full', 
+                    'b_num_employ_part', 
+                    'b_num_employ_temp', 
+                    'b_num_employ_intern', 
+                    'b_num_employ_unpaid', 
+                    'b_nemployees_main', 
+                    'b_full_wage_main', 
+                    'b_temp_wage_main', 
+                    'b_intern_wage_main', 
+                    'b_unpaid_wage_main', 
+                    'b_wagebill_main', 
+                    'digitspan', 
+                    'b_separate_accounts', 
+                    'b_fin_loan_reject_times', 
+                    'b_fin_calcexp', 
+                    'b_loans', 
+                    'b_totloans_bank', 
+                    'b_totloans_mfi', 
+                    'b_totloans_famfriend', 
+                    'b_totloans_rosca', 
+                    'b_totloans', 
+                    'raven_score', 
+                    'fl_score', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_workhours_week', 
+                    'b_hasbranch', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_selfpay_hourlywage', 
+                    'b_selfpay_fixedsalary', 
+                    'b_selfpay_commission', 
+                    'b_selfpay_profitshare', 
+                    'b_selfpay_expenses', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_seasonal_sales', 
+                    'b_lastmonth_sales', 
+                    'b_beflastmonth_sales', 
+                    'b_highest_profits', 
+                    'b_lowest_profits', 
+                    'b_risk_attitude', 
+                    'b_hh_consumption')
+
+all_variables_names <- c(outcome_variable_name, treatment_variable_name, covariate_names)
+df <- df[, which(names(df) %in% all_variables_names)]
+df <- na.omit(df)
+
+names(df)[names(df) == outcome_variable_name] <- "Y"
+names(df)[names(df) == treatment_variable_name] <- "W"
+
+df <- data.frame(lapply(df, function(x) as.numeric(as.character(x))))
+
+train_fraction <- 0.80  
+n <- dim(df)[1]
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+df_train <- df[train_idx,]
+df_test <- df[-train_idx,]
+
+#### Step 1: Fit the forest
+cf <- causal_forest(
+  X = as.matrix(df_train[,covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  num.trees=200) # This is just for speed. In a real application, remember increase this number!
+
+#### Step 2(a): Predict point estimates and standard errors (training set, out-of-bag)
+oob_pred <- predict(cf, estimate.variance=TRUE)
+
+kable_styling(kable(head(oob_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+oob_tauhat_cf <- oob_pred$predictions
+oob_tauhat_cf_se <- sqrt(oob_pred$variance.estimates)
+test_pred <- predict(cf, newdata=as.matrix(df_test[covariate_names]), estimate.variance=TRUE)
+tauhat_cf_test <- test_pred$predictions
+tauhat_cf_test_se <- sqrt(test_pred$variance.estimates)
+kable_styling(kable(head(test_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+
+cf_known_prop <- grf::causal_forest(
+  X = as.matrix(df_train[covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  W.hat = rep(mean(df_train$W), times=nrow(df_train)))  # Passing the known (approximate) propensity score
+
+### Assessing heterogeneity
+
+hist(oob_tauhat_cf, main="Causal forests: out-of-bag CATE")
+
+var_imp <- c(variable_importance(cf))
+names(var_imp) <- covariate_names
+sorted_var_imp <- sort(var_imp, decreasing=TRUE)
+
+
+as.data.frame(sorted_var_imp, row.names = names(sorted_var_imp)) %>%
+  kable("html", digits = 4, row.names = T) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+
+
+#### Heterogeneity across subgroups
+
+# Manually creating subgroups
+num_tiles <- 4  # ntiles = CATE is above / below the median
+df_train$cate <- oob_tauhat_cf
+df_train$ntile <- factor(ntile(oob_tauhat_cf, n=num_tiles))
+
+##### Average treatment effects within subgroups
+ols_sample_ate <- lm("Y ~ ntile + ntile:W", data=df_train)
+estimated_sample_ate <- coef(summary(ols_sample_ate))[(num_tiles+1):(2*num_tiles), c("Estimate", "Std. Error")]
+hypothesis_sample_ate <- paste0("ntile1:W = ", paste0("ntile", seq(2, num_tiles), ":W"))
+ftest_pvalue_sample_ate <- linearHypothesis(ols_sample_ate, hypothesis_sample_ate)[2,"Pr(>F)"]
+
+estimated_aipw_ate <- lapply(
+  seq(num_tiles), function(w) {
+    ate <- average_treatment_effect(cf, subset = df_train$ntile == w)
+  })
+estimated_aipw_ate <- data.frame(do.call(rbind, estimated_aipw_ate))
+
+# Testing for equality using Wald test
+waldtest_pvalue_aipw_ate <- wald.test(Sigma = diag(estimated_aipw_ate$std.err^2),
+                                      b = estimated_aipw_ate$estimate,
+                                      Terms = 1:num_tiles)$result$chi2[3]
+
+
+# Round the estimates and standard errors before displaying them
+estimated_sample_ate_rounded <- round(signif(estimated_sample_ate, digits = 5), 4)
+estimated_aipw_ate_rounded <- round(signif(estimated_aipw_ate, digits = 5), 4)
+
+# Format Table: Parenthesis, row/column names
+sample_ate_w_se <- c(rbind(estimated_sample_ate[,"Estimate"], paste0("(", estimated_sample_ate_rounded[,"Std. Error"], ")")))
+aipw_ate_w_se <- c(rbind(estimated_aipw_ate[,"estimate"], paste0("(", estimated_aipw_ate_rounded[,"std.err"], ")")))
+table <- cbind("Sample ATE" = sample_ate_w_se, "AIPW ATE" = aipw_ate_w_se)
+table <- rbind(table, round(signif(c(ftest_pvalue_sample_ate, waldtest_pvalue_aipw_ate), digits = 5), 4)) # add p-value to table
+left_column <- rep('', nrow(table))
+left_column[seq(1, nrow(table), 2)] <-
+  cell_spec(c(paste0("ntile", seq(num_tiles)), "P-Value"),
+            format = "html", escape = FALSE, color = "black", bold = TRUE)
+table <- cbind(" " = left_column, table)
+
+# Output table
+table %>%
+  kable("html", escape = FALSE, row.names = FALSE) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE) %>%
+  footnote(general = "Average treatment effects per subgroup defined by out-of-bag CATE.<br>
+           P-value is testing <i>H<sub>0</sub>: ATE is constant across ntiles</i>.<br>
+           Sample ATE uses an F-test and AIPW uses a Wald test;<br>
+           see the code above for more details.",
+           escape=FALSE)
+
+# Transform to data tables with relevant columns
+estimated_sample_ate <- as.data.frame(estimated_sample_ate)
+estimated_sample_ate$Method <- "Sample ATE"
+estimated_sample_ate$Ntile <- as.numeric(sub(".*([0-9]+).*", "\\1", rownames(estimated_sample_ate)))
+
+estimated_aipw_ate <- as.data.frame(estimated_aipw_ate)
+estimated_aipw_ate$Method <- "AIPW ATE"
+estimated_aipw_ate$Ntile <- as.numeric(rownames(estimated_aipw_ate))
+
+# unify column names and combine
+colnames(estimated_sample_ate) <- c("Estimate", "SE", "Method", "Ntile")
+colnames(estimated_aipw_ate) <- c("Estimate", "SE", "Method", "Ntile")
+combined_ate_estimates <- rbind(estimated_sample_ate, estimated_aipw_ate)
+
+# plot
+ggplot(combined_ate_estimates) +
+  geom_pointrange(aes(x = Ntile, y = Estimate, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                  size = 0.5,
+                  position = position_dodge(width = .5)) +
+  geom_errorbar(aes(x = Ntile, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                width = 0.4,
+                size = 0.75,
+                position = position_dodge(width = .5)) +
+  theme_linedraw() +
+  labs(x = "N-tile", y = "ATE Estimate", title = "ATE within N-tiles e_wagebill_all.1 (as defined by predicted CATE)")
+
+#____________________________________________________________Outcome 5: e_hh_consumption_________________________________________________________________
+
+rm(list = ls())
+# Set seed for reproducibility
+set.seed(1234)
+df <- read_dta("~/ML/ABA All Merged 20190920.dta")
+outcome_variable_name <- "e_hh_consumption"
+treatment_variable_name <- "treatment"
+covariate_names = c('b_birth_year', 
+                    'b_gender', 
+                    'b_education', 
+                    'b_income_sources', 
+                    'b_other_businesses', 
+                    'b_personal_expenses', 
+                    'b_monthly_income', 
+                    'b_sector_services', 
+                    'b_sector_retail', 
+                    'b_sector_manufacturing', 
+                    'b_sector_agriculture', 
+                    'b_sector_wholesale', 
+                    'b_number_partners', 
+                    'b_registration', 
+                    'b_premises', 
+                    'b_premisesown_own', 
+                    'b_premisesown_rentold', 
+                    'b_premisesown_rentnew', 
+                    'b_start_year', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_consignment', 
+                    'b_credit', 
+                    'b_staff_yesno', 
+                    'b_num_employ_full', 
+                    'b_num_employ_part', 
+                    'b_num_employ_temp', 
+                    'b_num_employ_intern', 
+                    'b_num_employ_unpaid', 
+                    'b_nemployees_main', 
+                    'b_full_wage_main', 
+                    'b_temp_wage_main', 
+                    'b_intern_wage_main', 
+                    'b_unpaid_wage_main', 
+                    'b_wagebill_main', 
+                    'digitspan', 
+                    'b_separate_accounts', 
+                    'b_fin_loan_reject_times', 
+                    'b_fin_calcexp', 
+                    'b_loans', 
+                    'b_totloans_bank', 
+                    'b_totloans_mfi', 
+                    'b_totloans_famfriend', 
+                    'b_totloans_rosca', 
+                    'b_totloans', 
+                    'raven_score', 
+                    'fl_score', 
+                    'b_hours', 
+                    'b_days', 
+                    'b_workhours_week', 
+                    'b_hasbranch', 
+                    'b_branches', 
+                    'b_closed_branches', 
+                    'b_new_branches', 
+                    'b_monthly_expenses', 
+                    'b_monthly_revenue', 
+                    'b_monthly_profits', 
+                    'b_selfpay_hourlywage', 
+                    'b_selfpay_fixedsalary', 
+                    'b_selfpay_commission', 
+                    'b_selfpay_profitshare', 
+                    'b_selfpay_expenses', 
+                    'b_amount', 
+                    'b_number_suppliers', 
+                    'b_importing_inputs', 
+                    'b_exporting', 
+                    'b_sales_better', 
+                    'b_sales_average', 
+                    'b_sales_worse', 
+                    'b_seasonal_sales', 
+                    'b_lastmonth_sales', 
+                    'b_beflastmonth_sales', 
+                    'b_highest_profits', 
+                    'b_lowest_profits', 
+                    'b_risk_attitude', 
+                    'b_hh_consumption')
+
+all_variables_names <- c(outcome_variable_name, treatment_variable_name, covariate_names)
+df <- df[, which(names(df) %in% all_variables_names)]
+df <- na.omit(df)
+
+names(df)[names(df) == outcome_variable_name] <- "Y"
+names(df)[names(df) == treatment_variable_name] <- "W"
+
+df <- data.frame(lapply(df, function(x) as.numeric(as.character(x))))
+
+train_fraction <- 0.80  
+n <- dim(df)[1]
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+df_train <- df[train_idx,]
+df_test <- df[-train_idx,]
+
+#### Step 1: Fit the forest
+cf <- causal_forest(
+  X = as.matrix(df_train[,covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  num.trees=200) # This is just for speed. In a real application, remember increase this number!
+
+#### Step 2(a): Predict point estimates and standard errors (training set, out-of-bag)
+oob_pred <- predict(cf, estimate.variance=TRUE)
+
+kable_styling(kable(head(oob_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+oob_tauhat_cf <- oob_pred$predictions
+oob_tauhat_cf_se <- sqrt(oob_pred$variance.estimates)
+test_pred <- predict(cf, newdata=as.matrix(df_test[covariate_names]), estimate.variance=TRUE)
+tauhat_cf_test <- test_pred$predictions
+tauhat_cf_test_se <- sqrt(test_pred$variance.estimates)
+kable_styling(kable(head(test_pred, 3), "html", digits = 4),
+              bootstrap_options=c("striped", "hover", "condensed", "responsive"),
+              full_width=FALSE)
+
+cf_known_prop <- grf::causal_forest(
+  X = as.matrix(df_train[covariate_names]),
+  Y = df_train$Y,
+  W = df_train$W,
+  W.hat = rep(mean(df_train$W), times=nrow(df_train)))  # Passing the known (approximate) propensity score
+
+### Assessing heterogeneity
+
+hist(oob_tauhat_cf, main="Causal forests: out-of-bag CATE")
+
+var_imp <- c(variable_importance(cf))
+names(var_imp) <- covariate_names
+sorted_var_imp <- sort(var_imp, decreasing=TRUE)
+
+
+as.data.frame(sorted_var_imp, row.names = names(sorted_var_imp)) %>%
+  kable("html", digits = 4, row.names = T) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+
+
+#### Heterogeneity across subgroups
+
+# Manually creating subgroups
+num_tiles <- 4  # ntiles = CATE is above / below the median
+df_train$cate <- oob_tauhat_cf
+df_train$ntile <- factor(ntile(oob_tauhat_cf, n=num_tiles))
+
+##### Average treatment effects within subgroups
+ols_sample_ate <- lm("Y ~ ntile + ntile:W", data=df_train)
+estimated_sample_ate <- coef(summary(ols_sample_ate))[(num_tiles+1):(2*num_tiles), c("Estimate", "Std. Error")]
+hypothesis_sample_ate <- paste0("ntile1:W = ", paste0("ntile", seq(2, num_tiles), ":W"))
+ftest_pvalue_sample_ate <- linearHypothesis(ols_sample_ate, hypothesis_sample_ate)[2,"Pr(>F)"]
+
+estimated_aipw_ate <- lapply(
+  seq(num_tiles), function(w) {
+    ate <- average_treatment_effect(cf, subset = df_train$ntile == w)
+  })
+estimated_aipw_ate <- data.frame(do.call(rbind, estimated_aipw_ate))
+
+# Testing for equality using Wald test
+waldtest_pvalue_aipw_ate <- wald.test(Sigma = diag(estimated_aipw_ate$std.err^2),
+                                      b = estimated_aipw_ate$estimate,
+                                      Terms = 1:num_tiles)$result$chi2[3]
+
+
+# Round the estimates and standard errors before displaying them
+estimated_sample_ate_rounded <- round(signif(estimated_sample_ate, digits = 5), 4)
+estimated_aipw_ate_rounded <- round(signif(estimated_aipw_ate, digits = 5), 4)
+
+# Format Table: Parenthesis, row/column names
+sample_ate_w_se <- c(rbind(estimated_sample_ate[,"Estimate"], paste0("(", estimated_sample_ate_rounded[,"Std. Error"], ")")))
+aipw_ate_w_se <- c(rbind(estimated_aipw_ate[,"estimate"], paste0("(", estimated_aipw_ate_rounded[,"std.err"], ")")))
+table <- cbind("Sample ATE" = sample_ate_w_se, "AIPW ATE" = aipw_ate_w_se)
+table <- rbind(table, round(signif(c(ftest_pvalue_sample_ate, waldtest_pvalue_aipw_ate), digits = 5), 4)) # add p-value to table
+left_column <- rep('', nrow(table))
+left_column[seq(1, nrow(table), 2)] <-
+  cell_spec(c(paste0("ntile", seq(num_tiles)), "P-Value"),
+            format = "html", escape = FALSE, color = "black", bold = TRUE)
+table <- cbind(" " = left_column, table)
+
+# Output table
+table %>%
+  kable("html", escape = FALSE, row.names = FALSE) %>%
+  kable_styling(bootstrap_options=c("striped", "hover", "condensed", "responsive"), full_width=FALSE) %>%
+  footnote(general = "Average treatment effects per subgroup defined by out-of-bag CATE.<br>
+           P-value is testing <i>H<sub>0</sub>: ATE is constant across ntiles</i>.<br>
+           Sample ATE uses an F-test and AIPW uses a Wald test;<br>
+           see the code above for more details.",
+           escape=FALSE)
+
+# Transform to data tables with relevant columns
+estimated_sample_ate <- as.data.frame(estimated_sample_ate)
+estimated_sample_ate$Method <- "Sample ATE"
+estimated_sample_ate$Ntile <- as.numeric(sub(".*([0-9]+).*", "\\1", rownames(estimated_sample_ate)))
+
+estimated_aipw_ate <- as.data.frame(estimated_aipw_ate)
+estimated_aipw_ate$Method <- "AIPW ATE"
+estimated_aipw_ate$Ntile <- as.numeric(rownames(estimated_aipw_ate))
+
+# unify column names and combine
+colnames(estimated_sample_ate) <- c("Estimate", "SE", "Method", "Ntile")
+colnames(estimated_aipw_ate) <- c("Estimate", "SE", "Method", "Ntile")
+combined_ate_estimates <- rbind(estimated_sample_ate, estimated_aipw_ate)
+
+# plot
+ggplot(combined_ate_estimates) +
+  geom_pointrange(aes(x = Ntile, y = Estimate, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                  size = 0.5,
+                  position = position_dodge(width = .5)) +
+  geom_errorbar(aes(x = Ntile, ymax = Estimate + 1.96 * SE, ymin = Estimate - 1.96 * SE, color = Method), 
+                width = 0.4,
+                size = 0.75,
+                position = position_dodge(width = .5)) +
+  theme_linedraw() +
+  labs(x = "N-tile", y = "ATE Estimate", title = "ATE within N-tiles e_hh_consumption.1 (as defined by predicted CATE)")
+
+
+
